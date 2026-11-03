@@ -1,6 +1,5 @@
 #include "process.hpp"
 
-#include <tlhelp32.h>
 #include <psapi.h>
 #include <cwchar>
 #include <cstring>
@@ -54,8 +53,8 @@ bool Process::attach(const std::wstring& exe_name) {
         return false;
     }
 
-    // Ask for MINIMAL permissions. EAC might allow a read-only handle.
-    HANDLE handle = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    // Ask for QUERY_INFORMATION so PSAPI can enumerate modules
+    HANDLE handle = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
     
     if (handle == nullptr) {
         printf("[attach] FAILED: Access Denied. EAC blocked OpenProcess (Error %lu)\n", GetLastError());
@@ -85,8 +84,9 @@ bool Process::attach(const std::wstring& exe_name) {
 
     if (best != nullptr) {
         main_ = *best;
+        printf("[module] base=0x%llx size=0x%zx\n", (unsigned long long)main_.base, main_.size);
     } else {
-        printf("[attach] FAILED: module not found in Toolhelp snapshot\n");
+        printf("[attach] FAILED: module not found via PSAPI\n");
         return false;
     }
 
@@ -121,7 +121,6 @@ bool Process::read_raw(std::uintptr_t addr, void* dst, std::size_t size) const {
 bool Process::write_raw(std::uintptr_t addr, const void* src, std::size_t size) const {
     if (handle_ == nullptr || addr == 0 || size == 0 || src == nullptr) return false;
     SIZE_T written = 0;
-    // Note: This will fail if we only opened the process with PROCESS_VM_READ
     return WriteProcessMemory(handle_, reinterpret_cast<LPVOID>(addr), src, size, &written) != FALSE && written == size;
 }
 
@@ -132,22 +131,29 @@ std::uintptr_t Process::read_ptr(std::uintptr_t addr) const {
 
 std::vector<ModuleInfo> Process::modules() const {
     std::vector<ModuleInfo> out;
-    if (pid_ == 0) return out;
+    if (handle_ == nullptr) return out;
 
-    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid_);
-    if (snap != INVALID_HANDLE_VALUE) {
-        MODULEENTRY32W me{};
-        me.dwSize = sizeof(me);
-        if (Module32FirstW(snap, &me)) {
-            do {
-                ModuleInfo info{};
-                info.base = reinterpret_cast<std::uintptr_t>(me.modBaseAddr);
-                info.size = me.modBaseSize;
-                info.name = me.szModule;
-                out.push_back(std::move(info));
-            } while (Module32NextW(snap, &me));
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+
+    // Use PSAPI instead of Toolhelp
+    if (EnumProcessModulesEx(handle_, hMods, sizeof(hMods), &cbNeeded, LIST_MODULES_ALL)) {
+        DWORD count = cbNeeded / sizeof(HMODULE);
+        for (DWORD i = 0; i < count; i++) {
+            ModuleInfo info{};
+            info.base = reinterpret_cast<std::uintptr_t>(hMods[i]);
+            
+            MODULEINFO modInfo{};
+            if (GetModuleInformation(handle_, hMods[i], &modInfo, sizeof(modInfo))) {
+                info.size = modInfo.SizeOfImage;
+            }
+
+            WCHAR szModName[MAX_PATH];
+            if (GetModuleBaseNameW(handle_, hMods[i], szModName, MAX_PATH)) {
+                info.name = szModName;
+            }
+            out.push_back(std::move(info));
         }
-        CloseHandle(snap);
     }
     return out;
 }
