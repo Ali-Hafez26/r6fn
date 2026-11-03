@@ -58,9 +58,9 @@ struct Transform {
 
 inline Vec3 rotate_vector(const Quat& q, const Vec3& v) {
     const Vec3 u{q.x, q.y, q.z};
-    const Vec3 t{u.y * v.z - u.z * v.y,
-                 u.z * v.x - u.x * v.z,
-                 u.x * v.y - u.y * v.x};
+        Vec3 t{u.y * v.z - u.z * v.y,
+           u.z * v.x - u.x * v.z,
+           u.x * v.y - u.y * v.x};
     t = t * 2.0f;
     const Vec3 ut{u.y * t.z - u.z * t.y,
                   u.z * t.x - u.x * t.z,
