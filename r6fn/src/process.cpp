@@ -1,6 +1,7 @@
 #include "process.hpp"
 
 #include <psapi.h>
+#include <tlhelp32.h>
 #include <cwchar>
 #include <cstring>
 #include <utility>
