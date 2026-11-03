@@ -75,7 +75,8 @@ void Overlay::thread_main() {
     window_class.style = CS_HREDRAW | CS_VREDRAW;
     window_class.lpfnWndProc = &Overlay::window_proc;
     window_class.hInstance = GetModuleHandleW(nullptr);
-    window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    // FIXED: IDC_ARROW cast to wide resource pointer for LoadCursorW
+    window_class.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(IDC_ARROW));
     window_class.lpszClassName = L"R6FN_OVERLAY_WINDOW";
 
     RegisterClassExW(&window_class);
