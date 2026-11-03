@@ -6,6 +6,7 @@
 #include <cstring>
 #include <utility>
 #include <wchar.h>
+#include <cstdio>
 
 #pragma comment(lib, "psapi.lib")
 
@@ -19,9 +20,7 @@ std::wstring file_name_of(const std::wstring& path) {
 
 std::uint32_t find_pid(const std::wstring& exe_name) {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snap == INVALID_HANDLE_VALUE) {
-        return 0;
-    }
+    if (snap == INVALID_HANDLE_VALUE) return 0;
 
     PROCESSENTRY32W entry{};
     entry.dwSize = sizeof(entry);
@@ -51,13 +50,15 @@ bool Process::attach(const std::wstring& exe_name) {
 
     const std::uint32_t pid = find_pid(exe_name);
     if (pid == 0) {
+        printf("[attach] FAILED: process not running (PID not found)\n");
         return false;
     }
 
-    HANDLE handle = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION |
-                                    PROCESS_QUERY_INFORMATION,
-                                FALSE, pid);
+    // Ask for MINIMAL permissions. EAC might allow a read-only handle.
+    HANDLE handle = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    
     if (handle == nullptr) {
+        printf("[attach] FAILED: Access Denied. EAC blocked OpenProcess (Error %lu)\n", GetLastError());
         return false;
     }
 
@@ -85,6 +86,7 @@ bool Process::attach(const std::wstring& exe_name) {
     if (best != nullptr) {
         main_ = *best;
     } else {
+        printf("[attach] FAILED: module not found in Toolhelp snapshot\n");
         return false;
     }
 
@@ -101,17 +103,12 @@ void Process::detach() {
 }
 
 bool Process::alive() const {
-    if (handle_ == nullptr) {
-        return false;
-    }
+    if (handle_ == nullptr) return false;
     return WaitForSingleObject(handle_, 0) == WAIT_TIMEOUT;
 }
 
 std::size_t Process::read_into(std::uintptr_t addr, void* dst, std::size_t size) const {
-    if (handle_ == nullptr || addr == 0 || size == 0 || dst == nullptr) {
-        return 0;
-    }
-
+    if (handle_ == nullptr || addr == 0 || size == 0 || dst == nullptr) return 0;
     SIZE_T got = 0;
     ReadProcessMemory(handle_, reinterpret_cast<LPCVOID>(addr), dst, size, &got);
     return static_cast<std::size_t>(got);
@@ -122,13 +119,10 @@ bool Process::read_raw(std::uintptr_t addr, void* dst, std::size_t size) const {
 }
 
 bool Process::write_raw(std::uintptr_t addr, const void* src, std::size_t size) const {
-    if (handle_ == nullptr || addr == 0 || size == 0 || src == nullptr) {
-        return false;
-    }
-
+    if (handle_ == nullptr || addr == 0 || size == 0 || src == nullptr) return false;
     SIZE_T written = 0;
-    return WriteProcessMemory(handle_, reinterpret_cast<LPVOID>(addr), src, size, &written) != FALSE &&
-           written == size;
+    // Note: This will fail if we only opened the process with PROCESS_VM_READ
+    return WriteProcessMemory(handle_, reinterpret_cast<LPVOID>(addr), src, size, &written) != FALSE && written == size;
 }
 
 std::uintptr_t Process::read_ptr(std::uintptr_t addr) const {
@@ -138,11 +132,8 @@ std::uintptr_t Process::read_ptr(std::uintptr_t addr) const {
 
 std::vector<ModuleInfo> Process::modules() const {
     std::vector<ModuleInfo> out;
-    if (pid_ == 0) {
-        return out;
-    }
+    if (pid_ == 0) return out;
 
-    // EAC blocks external PEB reads. Using Toolhelp32 to enumerate modules instead.
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid_);
     if (snap != INVALID_HANDLE_VALUE) {
         MODULEENTRY32W me{};
