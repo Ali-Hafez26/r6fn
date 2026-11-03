@@ -1,8 +1,10 @@
 #include "features.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <random>
 #include <utility>
 
 namespace ext {
@@ -164,7 +166,7 @@ bool Features::pick_target(Vec3& target, float& distance) const {
         if (!entity.valid || entity.local || entity.dead) {
             continue;
         }
-        if (esp_.team_filter && !esp_.show_teammates && entity.team != 0 &&
+        if (esp.team_filter && !esp.show_teammates && entity.team != 0 &&
             entity.team == snapshot_.local_team) {
             continue;
         }
@@ -271,7 +273,7 @@ DrawFrame Features::build_frame() const {
         return frame;
     }
 
-    if (esp_.fov_circle && toggles_.aim) {
+    if (esp.fov_circle && toggles_.aim) {
         frame.draw_fov = true;
         frame.center_x = static_cast<float>(viewport_.w) * 0.5f;
         frame.center_y = static_cast<float>(viewport_.h) * 0.5f;
@@ -292,7 +294,7 @@ DrawFrame Features::build_frame() const {
         if (!entity.valid || entity.local || entity.dead) {
             continue;
         }
-        if (esp_.team_filter && !esp_.show_teammates && entity.team != 0 &&
+        if (esp.team_filter && !esp.show_teammates && entity.team != 0 &&
             entity.team == snapshot_.local_team) {
             continue;
         }
@@ -320,13 +322,13 @@ DrawFrame Features::build_frame() const {
         item.y1 = feet_screen.y;
         item.health = entity.health;
         item.max_health = entity.max_health;
-        item.has_health = esp_.health;
+        item.has_health = esp.health;
         item.distance = entity.distance;
         item.visible = entity.recently_rendered;
-        item.box = esp_.boxes;
-        item.show_distance = esp_.distance;
+        item.box = esp.boxes;
+        item.show_distance = esp.distance;
 
-        if (esp_.names) {
+        if (esp.names) {
             item.name = entity.name.empty() ? "player" : entity.name;
         }
 
